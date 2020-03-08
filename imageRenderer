@@ -1,0 +1,190 @@
+import 'package:ampstor/data/blocs/blocs.dart';
+import 'package:ampstor/data/classes/index.dart';
+import 'package:ampstor/ui/common/index.dart';
+import 'package:ampstor/sdk/ampstor_sdk.dart';
+import 'package:ampstor/data/theme/index.dart';
+import 'package:ampstor/generated/i18n.dart';
+import 'package:ampstor/ui/editor/common/index.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:get_it/get_it.dart';
+
+class ImageRender extends StatefulWidget {
+  final StoryElement element;
+  final StoryLayer layer;
+  final Story story;
+  final BoxConstraints dimens;
+
+  const ImageRender({
+    Key key,
+    @required this.element,
+    @required this.layer,
+    @required this.story,
+    @required this.dimens,
+  }) : super(key: key);
+
+  @override
+  _ImageRenderState createState() => _ImageRenderState();
+}
+
+class _ImageRenderState extends State<ImageRender> {
+  bool _isAccepting = false;
+  @override
+  Widget build(BuildContext context) {
+    final db = GetIt.instance.get<DatabaseService>();
+    return Container(
+      child: BlocBuilder<EditorBloc, EditorState>(
+        builder: (context, state) {
+          return StreamBuilder<List<ImageElement>>(
+              stream:
+                  db.storyDao.watchImageElementsByElementId(widget.element.id, widget.element.storyId),
+              builder: (context, snapshot) {
+                if (state is EditorDragging) {
+                  return DragTarget<MediaSearch>(
+                    onAccept: (data) {
+                      BlocProvider.of<EditorBloc>(context).add(CancelDrag());
+                      _isAccepting = false;
+                      try {
+                        if (snapshot.hasData && snapshot.data.isNotEmpty) {
+                          final _image = snapshot.data.first;
+
+                          final currentValue = _image;
+                          final newValue = _image.copyWith(src: data.url);
+                          BlocProvider.of<EditorBloc>(context).add(TrackChange(
+                            action: () {
+                              db.storyDao.editImage(newValue);
+                            },
+                            undo: () {
+                              db.storyDao.editImage(currentValue);
+                            },
+                          ));
+                        }
+                      } catch (e) {}
+                    },
+                    onLeave: (data) {
+                      _isAccepting = false;
+                    },
+                    onWillAccept: (data) {
+                      if (data?.url == null) return false;
+                      if (data.type != MediaType.image) return false;
+                      _isAccepting = true;
+                      return true;
+                    },
+                    builder: (context, accept, reject) {
+                      double h;
+                      double w;
+                      if (snapshot.hasData && snapshot.data.isNotEmpty) {
+                        final _image = snapshot.data.first;
+                        h = _image?.height;
+                        w = _image?.width;
+                      }
+                      return Container(
+                        height: h,
+                        width: w,
+                        color: _isAccepting
+                            ? Colors.greenAccent
+                            : Colors.blueAccent,
+                        child: Center(child: Icon(Icons.image)),
+                      );
+                    },
+                  );
+                }
+                if (snapshot.hasData && snapshot.data.isNotEmpty) {
+                  final _image = snapshot.data.first;
+                  final _hasImage = _image?.src != null;
+                  if (_hasImage) {
+                    final String color = _image?.color;
+                    double h = _image?.height;
+                    double w = _image?.width;
+                    if (_image.src.toLowerCase().contains('.svg')) {
+                      return Container(
+                        height: h,
+                        width: w,
+                        child: kIsWeb
+                            ? ImageSvgWeb(
+                                url: _image.src,
+                                height: h,
+                                width: w,
+                                fit: _getImageFit(_image),
+                              )
+                            : SvgPicture.network(
+                                _image.src,
+                                fit: _getImageFit(_image),
+                                color: UIColors.colorFromString(color),
+                              ),
+                      );
+                    }
+                    return Container(
+                      height: h,
+                      width: w,
+                      child: Image.network(
+                        _image.src,
+                        fit: _getImageFit(_image),
+                        color: UIColors.colorFromString(color),
+                      ),
+                    );
+                  }
+                  return Container();
+                }
+                return Container(
+                  child: Center(
+                      child: Container(
+                    height: 100.0,
+                    width: 100.0,
+                    color: Colors.blueAccent,
+                    child: Tooltip(
+                      message: I18n.of(context).renderAddImage,
+                      child: InkWell(
+                        child: Icon(Icons.image),
+                        onTap: () async {
+                          final _image = await Navigator.push<MediaSearch>(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => ImageSearchView(
+                                      title: I18n.of(context).renderAddImage),
+                                  fullscreenDialog: true));
+                          if (_image != null) {
+                            BlocProvider.of<EditorBloc>(context)
+                                .add(TrackChange(
+                              action: () {
+                                db.storyDao.addImage(
+                                  widget.element.id,
+                                  widget.element.storyId,
+                                  _image.url,
+                                  height: 100.0,
+                                  width: 100.0,
+                                  fit: widget.layer.layerType == 'fill'
+                                      ? 'responsive'
+                                      : 'contain',
+                                );
+                              },
+                              undo: () async {
+                                final _elements = await db.storyDao.imageById(
+                                    widget.element.storyId, widget.element.id);
+                                if (_elements != null) {
+                                  db.storyDao.deleteImageElementId(
+                                      _elements.last.elementId);
+                                }
+                              },
+                            ));
+                          }
+                        },
+                      ),
+                    ),
+                  )),
+                );
+              });
+        },
+      ),
+    );
+  }
+
+  BoxFit _getImageFit(ImageElement image) {
+    if (image.fit == 'cover') return BoxFit.cover;
+    if (image.fit == 'fill') return BoxFit.fill;
+    if (image.fit == 'responsive') return BoxFit.cover;
+    return BoxFit.contain;
+  }
+}
