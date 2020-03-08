@@ -1,0 +1,158 @@
+import 'package:ampstor/data/blocs/blocs.dart';
+import 'package:ampstor/ui/common/index.dart';
+import 'package:ampstor/sdk/ampstor_sdk.dart';
+import 'package:ampstor/generated/i18n.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:get_it/get_it.dart';
+
+class TextSrcTextField extends StatefulWidget {
+  const TextSrcTextField({
+    Key key,
+    @required this.text,
+  }) : super(key: key);
+
+  final TextElement text;
+
+  @override
+  _TextSrcTextFieldState createState() => _TextSrcTextFieldState();
+}
+
+class _TextSrcTextFieldState extends State<TextSrcTextField> {
+  TextElement text;
+
+  final _contoller = TextEditingController();
+  final _link = TextEditingController();
+
+  @override
+  void didUpdateWidget(TextSrcTextField oldWidget) {
+    if (oldWidget.text.elementId != widget.text.elementId) {
+      _init();
+    }
+    super.didUpdateWidget(oldWidget);
+  }
+
+  @override
+  void initState() {
+    _init();
+    super.initState();
+  }
+
+  void _init() {
+    text = widget.text;
+    _contoller.text = text.src;
+    _link.text = text?.link ?? '';
+  }
+
+  final delay = Debouncer();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(8.0),
+      child: Column(
+        children: <Widget>[
+          Container(
+            margin: EdgeInsets.only(bottom: 10),
+            padding: EdgeInsets.only(left: 10),
+            decoration: BoxDecoration(
+              //color: Colors.white,
+              borderRadius: BorderRadius.all(Radius.circular(4.0)),
+              border: Border.all(
+                  // color: Colors.grey,
+                  width: 0.2,
+                  color: Colors.grey[500]),
+            ),
+            child: TextField(
+              style: TextStyle(fontSize: 13),
+              controller: _contoller,
+              maxLines: null,
+              keyboardType: TextInputType.multiline,
+              decoration: InputDecoration(
+                  enabledBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: Colors.transparent),
+                  ),
+                  focusedBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: Colors.transparent),
+                  ),
+                  //contentPadding: EdgeInsets.only(bottom: 13),
+                  hintStyle: TextStyle(
+                    fontSize: 9,
+                  ),
+                  hintText: I18n.of(context).editorTextSource),
+              onChanged: (val) => delay.run(() => _editSrc(context)),
+              onEditingComplete: () => _editSrc(context),
+            ),
+          ),
+          Tooltip(
+            message: 'Please include http://',
+            textStyle: TextStyle(fontSize: 9, color: Colors.white),
+            child: Container(
+              height: 30,
+              padding: EdgeInsets.only(left: 10),
+              decoration: BoxDecoration(
+                //color: Colors.white,
+                borderRadius: BorderRadius.all(Radius.circular(4.0)),
+                border: Border.all(
+                    // color: Colors.grey,
+                    width: 0.2,
+                    color: Colors.grey[500]),
+              ),
+              child: TextField(
+                style: TextStyle(fontSize: 13),
+                controller: _link,
+                decoration: InputDecoration(
+                  isDense: true,
+                    enabledBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(color: Colors.transparent),
+                    ),
+                    focusedBorder: UnderlineInputBorder(
+                      borderSide: BorderSide(color: Colors.transparent),
+                    ),
+                    //contentPadding: EdgeInsets.only(bottom: 13),
+                    hintStyle: TextStyle(
+                      fontSize: 13,
+                    ),
+                    hintText: I18n.of(context).editorCta_link),
+                onChanged: (val) => delay.run(() => _editLink(context)),
+                onEditingComplete: () => _editLink(context),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _editSrc(BuildContext context) {
+    final db = GetIt.instance.get<DatabaseService>();
+    final currentValue = widget.text.src;
+    final newValue = _contoller.text;
+    BlocProvider.of<EditorBloc>(context).add(TrackChange(
+      action: () {
+        db.storyDao.editText(widget.text.copyWith(src: newValue));
+        if (_contoller.text != newValue) _contoller.text = newValue;
+      },
+      undo: () {
+        db.storyDao.editText(widget.text.copyWith(src: currentValue));
+        if (_contoller.text != currentValue) _contoller.text = currentValue;
+      },
+    ));
+  }
+
+  void _editLink(BuildContext context) {
+    final db = GetIt.instance.get<DatabaseService>();
+    final currentValue = widget.text.link;
+    final newValue = _link.text;
+    BlocProvider.of<EditorBloc>(context).add(TrackChange(
+      action: () {
+        db.storyDao.editText(widget.text.copyWith(link: newValue));
+        if (_link.text != newValue) _link.text = newValue;
+      },
+      undo: () {
+        db.storyDao.editText(widget.text.copyWith(link: currentValue));
+        if (_link.text != currentValue) _link.text = currentValue;
+      },
+    ));
+  }
+}
